@@ -2,7 +2,7 @@ import sys
 import json
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, 
-    QPushButton, QTableWidget, QTableWidgetItem, QSystemTrayIcon
+    QPushButton, QTableWidget, QTableWidgetItem, QSystemTrayIcon,QMenu, QAction
 )
 from PyQt5.QtWidgets import QMessageBox, QFileDialog
 from PyQt5.QtCore import Qt
@@ -41,6 +41,17 @@ class NetworkScanDetectorGUI(QWidget):
         self.tray_icon = QSystemTrayIcon(self)
         self.tray_icon.setIcon(QIcon("Moiraguard_logo_bg.ico"))  # Set your desired icon
         self.tray_icon.setVisible(True)
+
+        # Set up tray menu
+        tray_menu = QMenu(self)
+        exit_action = QAction("Exit", self)
+        exit_action.triggered.connect(self.close_application)
+        tray_menu.addAction(exit_action)
+        self.tray_icon.setContextMenu(tray_menu)
+        
+        # Connect the tray icon to restore the window when clicked
+        self.tray_icon.activated.connect(self.restore_window)
+        
         # Header with logo and title
         header_layout = QHBoxLayout()
         self.logo_label = QLabel()
@@ -115,6 +126,20 @@ class NetworkScanDetectorGUI(QWidget):
         except Exception as e:
             print(f"Failed to load logo: {e}")
 
+    def closeEvent(self, event):
+        event.ignore()
+        self.hide()
+        self.tray_icon.showMessage("App Running", "The application is still running in the tray.", QSystemTrayIcon.Information)
+
+    def restore_window(self, reason):
+        if reason == QSystemTrayIcon.Trigger:
+            self.show()
+            self.activateWindow()  # Bring the window to the foreground
+            self.raise_()  # Ensure the window is raised
+
+    def close_application(self):
+        self.tray_icon.setVisible(False)
+        sys.exit()
     def get_host_ip_by_interface(self, interface):
         """
         Retrieve the IP address for a specific interface.
