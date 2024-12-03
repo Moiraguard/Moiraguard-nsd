@@ -2,11 +2,11 @@ import sys
 import json
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, 
-    QPushButton, QTableWidget, QTableWidgetItem, QFileDialog
+    QPushButton, QTableWidget, QTableWidgetItem, QSystemTrayIcon
 )
 from PyQt5.QtWidgets import QMessageBox, QFileDialog
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPixmap, QColor
+from PyQt5.QtGui import QPixmap, QColor, QIcon
 from threading import Thread
 from detector import Detector
 import psutil
@@ -37,10 +37,14 @@ class NetworkScanDetectorGUI(QWidget):
         # Main layout
         self.main_layout = QVBoxLayout()
 
+        # Set up the system tray icon
+        self.tray_icon = QSystemTrayIcon(self)
+        self.tray_icon.setIcon(QIcon("Moiraguard_logo_bg.ico"))  # Set your desired icon
+        self.tray_icon.setVisible(True)
         # Header with logo and title
         header_layout = QHBoxLayout()
         self.logo_label = QLabel()
-        self.set_logo("logo.png")  # Path to the logo
+        self.set_logo("Moiraguard_logo_bg.png")  # Path to the logo
         header_layout.addWidget(self.logo_label)
 
         self.title_label = QLabel("Network Scan Detector")
