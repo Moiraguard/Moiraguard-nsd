@@ -1,8 +1,10 @@
 import sys
+import json
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, 
-    QPushButton, QTableWidget, QTableWidgetItem
+    QPushButton, QTableWidget, QTableWidgetItem, QFileDialog
 )
+from PyQt5.QtWidgets import QMessageBox, QFileDialog
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap, QColor
 from threading import Thread
@@ -10,6 +12,14 @@ from detector import Detector
 import psutil
 import socket
 import netifaces
+from datetime import datetime
+import os
+from PyQt5.QtCore import QThreadPool, QRunnable, QObject, pyqtSignal,QThread
+import os
+import json
+from datetime import datetime
+from PyQt5.QtWidgets import QFileDialog, QMessageBox, QMainWindow, QApplication
+from PyQt5.QtCore import pyqtSignal, QThreadPool
 
 
 class NetworkScanDetectorGUI(QWidget):
@@ -22,6 +32,7 @@ class NetworkScanDetectorGUI(QWidget):
 
         self.detector = Detector(self.add_alert)
         self.monitoring_thread = None
+        self.alerts = []  # To store alerts before exporting
 
         # Main layout
         self.main_layout = QVBoxLayout()
@@ -65,15 +76,24 @@ class NetworkScanDetectorGUI(QWidget):
         self.stop_button.hide()
         self.button_layout.addWidget(self.stop_button)
 
+        # Clear and Export buttons
+        self.clear_button = QPushButton("Clear Alerts")
+        self.clear_button.setStyleSheet("background-color: #FFC107; color: white; font-size: 14px; padding: 10px;")
+        self.clear_button.clicked.connect(self.clear_alerts)
+        self.button_layout.addWidget(self.clear_button)
+
+        self.export_button = QPushButton("Export to JSON")
+        self.export_button.setStyleSheet("background-color: #03A9F4; color: white; font-size: 14px; padding: 10px;")
+        self.export_button.clicked.connect(self.export_to_json)
+        self.button_layout.addWidget(self.export_button)
+
         self.main_layout.addLayout(self.button_layout)
 
         # Alert Table
         self.alert_table = QTableWidget()
         self.alert_table.setRowCount(0)
         self.alert_table.setColumnCount(6)
-        self.alert_table.setHorizontalHeaderLabels(
-            ["Timestamp", "Event Type", "Source IP", "Scan Type", "Ports Scanned", "Severity"]
-        )
+        self.alert_table.setHorizontalHeaderLabels(["Timestamp", "Event Type", "Source IP", "Scan Type", "Ports Scanned", "Severity"])
         self.alert_table.horizontalHeader().setStretchLastSection(True)
         self.alert_table.setStyleSheet("background-color: #2E4053; color: white; gridline-color: #404E5C;")
         self.main_layout.addWidget(self.alert_table)
@@ -120,7 +140,7 @@ class NetworkScanDetectorGUI(QWidget):
 
     def add_alert(self, timestamp, event_type, source_ip, scan_type, ports_scanned, severity):
         """
-        Add a detected event to the alert table.
+        Add a detected event to the alert table and store it in the alerts list.
         """
         row_position = self.alert_table.rowCount()
         self.alert_table.insertRow(row_position)
@@ -132,6 +152,16 @@ class NetworkScanDetectorGUI(QWidget):
         severity_item = QTableWidgetItem(severity)
         severity_item.setForeground(QColor("red") if severity == "High" else QColor("yellow"))
         self.alert_table.setItem(row_position, 5, severity_item)
+
+        # Store the alert data in the list
+        self.alerts.append({
+            "timestamp": timestamp,
+            "event_type": event_type,
+            "source_ip": source_ip,
+            "scan_type": scan_type,
+            "ports_scanned": ports_scanned,
+            "severity": severity
+        })
 
         self.alert_table.scrollToBottom()
 
@@ -148,6 +178,59 @@ class NetworkScanDetectorGUI(QWidget):
         self.detector.stop_sniffer()
         self.switch_to_idle_mode()
 
+    def clear_alerts(self):
+        """
+        Clears all the alerts from the table and the internal alerts list.
+        """
+        self.alert_table.setRowCount(0)
+        self.alerts.clear()
+
+
+
+    def export_to_json(self):
+        """
+        Exports the current alerts to a JSON file directly within the function.
+        Saves it to the current directory where the tool is located.
+        """
+        if not self.alerts:
+            QMessageBox.warning(self, "No Data", "No alerts to export.")
+            return
+
+        # Get the current timestamp for the filename
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"alerts_{timestamp}.json"
+
+        # Get the current directory where the tool is located
+        current_directory = os.getcwd()
+
+        # Create the full path for the file
+        file_path = os.path.join(current_directory, filename)
+
+        try:
+            # Write the alerts to the JSON file
+            with open(file_path, 'w') as json_file:
+                json.dump(self.alerts, json_file, indent=4)
+
+            # Show success message with the file path
+            QMessageBox.information(self, "Export Success", f"Alerts successfully exported to {file_path}")
+
+        except Exception as e:
+            # Show failure message in case of an error
+            QMessageBox.warning(self, "Export Failed", f"Failed to export alerts: {str(e)}")
+
+    def on_export_success(self, file_path):
+        """
+        Handler for successful export.
+        """
+        QMessageBox.information(self, "Export Successful", f"Alerts exported successfully to:\n{file_path}")
+
+
+    def on_export_failure(self, error_message):
+        """
+        Handler for export failure.
+        """
+        QMessageBox.critical(self, "Export Failed", f"Failed to export alerts: {error_message}")
+
     def switch_to_monitoring_mode(self):
         self.start_button.hide()
         self.interface_combobox.setDisabled(True)
@@ -157,6 +240,8 @@ class NetworkScanDetectorGUI(QWidget):
         self.start_button.show()
         self.interface_combobox.setDisabled(False)
         self.stop_button.hide()
+
+
 
 
 def main():
