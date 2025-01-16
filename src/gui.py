@@ -2,37 +2,36 @@ import sys
 import json
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, 
-    QPushButton, QTableWidget, QTableWidgetItem, QSystemTrayIcon,QMenu, QAction
+    QPushButton, QTableWidget, QTableWidgetItem, QSystemTrayIcon, QMenu, QAction, QMessageBox
 )
-from PyQt5.QtWidgets import QMessageBox, QFileDialog
-from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap, QColor, QIcon
+from PyQt5.QtCore import Qt, pyqtSignal, QThread
 from threading import Thread
 from detector import Detector
 import psutil
-import socket
 import netifaces
 from datetime import datetime
 import os
-from PyQt5.QtCore import QThreadPool, QRunnable, QObject, pyqtSignal,QThread
-import os
-import json
-from datetime import datetime
-from PyQt5.QtWidgets import QFileDialog, QMessageBox, QMainWindow, QApplication
-from PyQt5.QtCore import pyqtSignal, QThreadPool
-
 
 class NetworkScanDetectorGUI(QWidget):
+    # Signals for thread-safe GUI updates
+    alert_signal = pyqtSignal(dict)
+    notification_signal = pyqtSignal(str, str)
+
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("Network Scan Detector")
+        self.setWindowTitle("MoiraGuard - Network Scan Detector")
         self.setGeometry(100, 100, 800, 600)
         self.setStyleSheet("background-color: #303A44; color: white;")
 
-        self.detector = Detector(self.add_alert)
+        self.detector = Detector(self.add_alert_threadsafe, self.notify_threadsafe)
         self.monitoring_thread = None
         self.alerts = []  # To store alerts before exporting
+
+        # Connect signals to slots
+        self.alert_signal.connect(self.add_alert)
+        self.notification_signal.connect(self.show_notification)
 
         # Main layout
         self.main_layout = QVBoxLayout()
@@ -51,14 +50,14 @@ class NetworkScanDetectorGUI(QWidget):
         
         # Connect the tray icon to restore the window when clicked
         self.tray_icon.activated.connect(self.restore_window)
-        
+
         # Header with logo and title
         header_layout = QHBoxLayout()
         self.logo_label = QLabel()
         self.set_logo("Moiraguard_logo_bg.png")  # Path to the logo
         header_layout.addWidget(self.logo_label)
 
-        self.title_label = QLabel("Network Scan Detector")
+        self.title_label = QLabel("MoiraGuard - Network Scan Detector")
         self.title_label.setStyleSheet("font-size: 24px; font-weight: bold; margin-left: 20px;")
         header_layout.addWidget(self.title_label)
         header_layout.addStretch()
@@ -91,7 +90,6 @@ class NetworkScanDetectorGUI(QWidget):
         self.stop_button.hide()
         self.button_layout.addWidget(self.stop_button)
 
-        # Clear and Export buttons
         self.clear_button = QPushButton("Clear Alerts")
         self.clear_button.setStyleSheet("background-color: #FFC107; color: white; font-size: 14px; padding: 10px;")
         self.clear_button.clicked.connect(self.clear_alerts)
@@ -116,9 +114,6 @@ class NetworkScanDetectorGUI(QWidget):
         self.setLayout(self.main_layout)
 
     def set_logo(self, logo_path):
-        """
-        Load and set the logo with resizing.
-        """
         try:
             pixmap = QPixmap(logo_path)
             scaled_pixmap = pixmap.scaled(100, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation)
@@ -126,73 +121,34 @@ class NetworkScanDetectorGUI(QWidget):
         except Exception as e:
             print(f"Failed to load logo: {e}")
 
-    def closeEvent(self, event):
-        event.ignore()
-        self.hide()
-        self.tray_icon.showMessage("App Running", "The application is still running in the tray.", QSystemTrayIcon.Information)
+    def notify_threadsafe(self, message, severity):
+        """
+        Emit a signal to display notifications in a thread-safe manner.
+        """
+        self.notification_signal.emit(message, severity)
 
-    def restore_window(self, reason):
-        if reason == QSystemTrayIcon.Trigger:
-            self.show()
-            self.activateWindow()  # Bring the window to the foreground
-            self.raise_()  # Ensure the window is raised
+    def add_alert_threadsafe(self, **event):
+        """
+        Emit a signal to add alerts to the table in a thread-safe manner.
+        """
+        self.alert_signal.emit(event)
 
-    def close_application(self):
-        self.tray_icon.setVisible(False)
-        sys.exit()
-    def get_host_ip_by_interface(self, interface):
+    def show_notification(self, message, severity):
         """
-        Retrieve the IP address for a specific interface.
+        Display a notification box for significant events.
         """
-        try:
-            addrs = netifaces.ifaddresses(interface)
-            return addrs[netifaces.AF_INET][0]['addr']
-        except KeyError:
-            return "Unknown"
+        notification = QMessageBox(self)
+        notification.setWindowTitle(f"{severity} Alert")
+        notification.setText(message)
 
-    def get_available_interfaces(self):
-        """
-        Get a list of available network interfaces.
-        """
-        interfaces = psutil.net_if_addrs()
-        return list(interfaces.keys())
-
-    def update_host_ip(self):
-        """
-        Update the host IP label based on the selected interface.
-        """
-        selected_interface = self.interface_combobox.currentText()
-        if selected_interface != "Select Interface":
-            self.ip_label.setText(f"Host IP: {self.get_host_ip_by_interface(selected_interface)}")
+        if severity == "High":
+            notification.setIcon(QMessageBox.Critical)
+        elif severity == "Medium":
+            notification.setIcon(QMessageBox.Warning)
         else:
-            self.ip_label.setText("Host IP: Not Selected")
+            notification.setIcon(QMessageBox.Information)
 
-    def add_alert(self, timestamp, event_type, source_ip, scan_type, ports_scanned, severity):
-        """
-        Add a detected event to the alert table and store it in the alerts list.
-        """
-        row_position = self.alert_table.rowCount()
-        self.alert_table.insertRow(row_position)
-        self.alert_table.setItem(row_position, 0, QTableWidgetItem(timestamp))
-        self.alert_table.setItem(row_position, 1, QTableWidgetItem(event_type))
-        self.alert_table.setItem(row_position, 2, QTableWidgetItem(source_ip))
-        self.alert_table.setItem(row_position, 3, QTableWidgetItem(scan_type))
-        self.alert_table.setItem(row_position, 4, QTableWidgetItem(ports_scanned))
-        severity_item = QTableWidgetItem(severity)
-        severity_item.setForeground(QColor("red") if severity == "High" else QColor("yellow"))
-        self.alert_table.setItem(row_position, 5, severity_item)
-
-        # Store the alert data in the list
-        self.alerts.append({
-            "timestamp": timestamp,
-            "event_type": event_type,
-            "source_ip": source_ip,
-            "scan_type": scan_type,
-            "ports_scanned": ports_scanned,
-            "severity": severity
-        })
-
-        self.alert_table.scrollToBottom()
+        notification.exec_()
 
     def start_monitoring(self):
         selected_interface = self.interface_combobox.currentText()
@@ -207,59 +163,6 @@ class NetworkScanDetectorGUI(QWidget):
         self.detector.stop_sniffer()
         self.switch_to_idle_mode()
 
-    def clear_alerts(self):
-        """
-        Clears all the alerts from the table and the internal alerts list.
-        """
-        self.alert_table.setRowCount(0)
-        self.alerts.clear()
-
-
-
-    def export_to_json(self):
-        """
-        Exports the current alerts to a JSON file directly within the function.
-        Saves it to the current directory where the tool is located.
-        """
-        if not self.alerts:
-            QMessageBox.warning(self, "No Data", "No alerts to export.")
-            return
-
-        # Get the current timestamp for the filename
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        filename = f"alerts_{timestamp}.json"
-
-        # Get the current directory where the tool is located
-        current_directory = os.getcwd()
-
-        # Create the full path for the file
-        file_path = os.path.join(current_directory, filename)
-
-        try:
-            # Write the alerts to the JSON file
-            with open(file_path, 'w') as json_file:
-                json.dump(self.alerts, json_file, indent=4)
-
-            # Show success message with the file path
-            QMessageBox.information(self, "Export Success", f"Alerts successfully exported to {file_path}")
-
-        except Exception as e:
-            # Show failure message in case of an error
-            QMessageBox.warning(self, "Export Failed", f"Failed to export alerts: {str(e)}")
-
-    def on_export_success(self, file_path):
-        """
-        Handler for successful export.
-        """
-        QMessageBox.information(self, "Export Successful", f"Alerts exported successfully to:\n{file_path}")
-
-
-    def on_export_failure(self, error_message):
-        """
-        Handler for export failure.
-        """
-        QMessageBox.critical(self, "Export Failed", f"Failed to export alerts: {error_message}")
-
     def switch_to_monitoring_mode(self):
         self.start_button.hide()
         self.interface_combobox.setDisabled(True)
@@ -270,15 +173,86 @@ class NetworkScanDetectorGUI(QWidget):
         self.interface_combobox.setDisabled(False)
         self.stop_button.hide()
 
+    def add_alert(self, event):
+        timestamp = event['timestamp']
+        event_type = event['event_type']
+        source_ip = event['source_ip']
+        scan_type = event['scan_type']
+        ports_scanned = event['ports_scanned']
+        severity = event['severity']
 
+        row_position = self.alert_table.rowCount()
+        self.alert_table.insertRow(row_position)
+        self.alert_table.setItem(row_position, 0, QTableWidgetItem(timestamp))
+        self.alert_table.setItem(row_position, 1, QTableWidgetItem(event_type))
+        self.alert_table.setItem(row_position, 2, QTableWidgetItem(source_ip))
+        self.alert_table.setItem(row_position, 3, QTableWidgetItem(scan_type))
+        self.alert_table.setItem(row_position, 4, QTableWidgetItem(ports_scanned))
+        severity_item = QTableWidgetItem(severity)
+        severity_item.setForeground(QColor("red") if severity == "High" else QColor("yellow"))
+        self.alert_table.setItem(row_position, 5, severity_item)
+        self.alert_table.scrollToBottom()
+        self.alerts.append({
+            "timestamp": timestamp,
+            "event_type": event_type,
+            "source_ip": source_ip,
+            "scan_type": scan_type,
+            "ports_scanned": ports_scanned,
+            "severity": severity
+        })
 
+    def get_available_interfaces(self):
+        interfaces = psutil.net_if_addrs()
+        return list(interfaces.keys())
 
-def main():
+    def update_host_ip(self):
+        selected_interface = self.interface_combobox.currentText()
+        if selected_interface != "Select Interface":
+            self.ip_label.setText(f"Host IP: {self.get_host_ip_by_interface(selected_interface)}")
+        else:
+            self.ip_label.setText("Host IP: Not Selected")
+
+    def get_host_ip_by_interface(self, interface):
+        try:
+            addrs = netifaces.ifaddresses(interface)
+            return addrs[netifaces.AF_INET][0]['addr']
+        except KeyError:
+            return "Unknown"
+
+    def clear_alerts(self):
+        self.alert_table.setRowCount(0)
+        self.alerts.clear()
+
+    def export_to_json(self):
+        if not self.alerts:
+            QMessageBox.warning(self, "No Data", "No alerts to export.")
+            return
+
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        filename = f"alerts_{timestamp}.json"
+        file_path = os.path.join(os.getcwd(), filename)
+
+        try:
+            with open(file_path, 'w') as json_file:
+                json.dump(self.alerts, json_file, indent=4)
+
+            QMessageBox.information(self, "Export Success", f"Alerts successfully exported to {file_path}")
+
+        except Exception as e:
+            QMessageBox.warning(self, "Export Failed", f"Failed to export alerts: {str(e)}")
+
+    def close_application(self):
+        self.tray_icon.setVisible(False)
+        sys.exit()
+
+    def restore_window(self, reason):
+        if reason == QSystemTrayIcon.Trigger:
+            self.show()
+            self.activateWindow()
+            self.raise_()
+
+if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = NetworkScanDetectorGUI()
     window.show()
     sys.exit(app.exec_())
-
-
-if __name__ == "__main__":
-    main()
