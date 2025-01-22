@@ -4,7 +4,7 @@
 ### Screenshots
 
 #### Main Interface:
-![Local image](Moiraguard-nsd_main_interface.jpeg)
+![Local image](Moiraguard-nsd_main_interface.png)
 
 
 # Getting Started with MoiraGuard-NSD Using Docker
