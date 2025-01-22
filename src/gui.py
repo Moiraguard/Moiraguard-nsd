@@ -1,3 +1,6 @@
+import os
+if not os.environ.get('XDG_RUNTIME_DIR'):
+    os.environ['XDG_RUNTIME_DIR'] = f'/run/user/{os.getuid()}'
 import sys
 import json
 from PyQt5.QtWidgets import (
@@ -5,7 +8,7 @@ from PyQt5.QtWidgets import (
     QPushButton, QTableWidget, QTableWidgetItem, QSystemTrayIcon, QMenu, QAction, QMessageBox
 )
 from PyQt5.QtGui import QPixmap, QColor, QIcon
-from PyQt5.QtCore import Qt, pyqtSignal, QThread
+from PyQt5.QtCore import Qt, pyqtSignal, QThread, QTimer
 from threading import Thread
 from detector import Detector
 import psutil
@@ -28,13 +31,20 @@ class NetworkScanDetectorGUI(QWidget):
         self.detector = Detector(self.add_alert_threadsafe, self.notify_threadsafe)
         self.monitoring_thread = None
         self.alerts = []  # To store alerts before exporting
-
+        # Main layout
+        self.main_layout = QVBoxLayout()
         # Connect signals to slots
         self.alert_signal.connect(self.add_alert)
         self.notification_signal.connect(self.show_notification)
 
-        # Main layout
-        self.main_layout = QVBoxLayout()
+        # In the __init__ method, add a notification bar
+        self.notification_bar = QLabel("")
+        self.notification_bar.setStyleSheet("background-color: #FFD700; color: black; font-size: 14px; padding: 5px;")
+        self.notification_bar.setAlignment(Qt.AlignCenter)
+        self.notification_bar.hide()
+        self.main_layout.addWidget(self.notification_bar)
+
+
 
         # Set up the system tray icon
         self.tray_icon = QSystemTrayIcon(self)
@@ -135,20 +145,19 @@ class NetworkScanDetectorGUI(QWidget):
 
     def show_notification(self, message, severity):
         """
-        Display a notification box for significant events.
+        Display a desktop notification using the system tray icon.
         """
-        notification = QMessageBox(self)
-        notification.setWindowTitle(f"{severity} Alert")
-        notification.setText(message)
-
+        icon = QSystemTrayIcon.Information  # Default icon
         if severity == "High":
-            notification.setIcon(QMessageBox.Critical)
+            icon = QSystemTrayIcon.Critical
         elif severity == "Medium":
-            notification.setIcon(QMessageBox.Warning)
-        else:
-            notification.setIcon(QMessageBox.Information)
+            icon = QSystemTrayIcon.Warning
 
-        notification.exec_()
+        # Show a desktop notification
+        self.tray_icon.showMessage(f"{severity} Alert", message, icon)
+
+        # Hide the notification after 5 seconds
+        QTimer.singleShot(5000, self.notification_bar.hide)
 
     def start_monitoring(self):
         selected_interface = self.interface_combobox.currentText()
