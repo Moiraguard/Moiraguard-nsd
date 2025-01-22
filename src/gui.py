@@ -259,6 +259,29 @@ class NetworkScanDetectorGUI(QWidget):
             self.show()
             self.activateWindow()
             self.raise_()
+    def closeEvent(self, event):
+        """
+        Override close event to minimize the application to the system tray.
+        """
+        if self.tray_icon.isVisible():
+            self.hide()  # Hide the main window
+            self.tray_icon.showMessage(
+                "MoiraGuard is Running",
+                "The application is now minimized to the system tray. Double-click the tray icon to restore it.",
+                QSystemTrayIcon.Information,
+            )
+            event.ignore()  # Prevent the application from closing
+        else:
+            event.accept()  # Allow the application to close
+
+    def restore_window(self, reason):
+        """
+        Restore the main window when the tray icon is activated.
+        """
+        if reason == QSystemTrayIcon.Trigger:  # Triggered on a single or double-click
+            self.show()  # Show the main window
+            self.activateWindow()  # Bring it to the foreground
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
