@@ -2,40 +2,34 @@ from datetime import datetime
 from scapy.all import sniff, IP, TCP, ICMP
 import socket
 import psutil
+import threading
+import netifaces
 
 class Detector:
     def __init__(self, alert_callback, notify_callback):
         self.alert_callback = alert_callback
-        self.notify_callback = notify_callback  # Callback to notify GUI
+        self.notify_callback = notify_callback
         self.is_running = False
-        self.host_ip = self.get_host_ip()
-        self.selected_interface = None
-        self.last_notification = {}  # To track last notifications by IP and scan type
-        self.notification_cooldown = 10  # Cooldown period in seconds
+        self.threads = {}
+        self.host_ips = set()  # Store IPs of the selected interfaces
+        self.last_notification = {}
+        self.notification_cooldown = 10
 
-    def get_ip_address(self, interface):
+    def get_host_ips(self, interfaces):
         """
-        Get the IP address for a specific interface.
+        Retrieve the IP addresses of the selected interfaces.
         """
-        addrs = psutil.net_if_addrs()
-        if interface in addrs:
-            for addr in addrs[interface]:
-                if addr.family == socket.AF_INET:
-                    self.host_ip = addr.address
-                    return addr.address
-        else:
-            return f"Interface {interface} not found."
-
-    def get_host_ip(self):
-        try:
-            return socket.gethostbyname(socket.gethostname())
-        except Exception:
-            return None
+        self.host_ips.clear()
+        for interface in interfaces:
+            try:
+                addrs = netifaces.ifaddresses(interface)
+                if netifaces.AF_INET in addrs:
+                    for addr_info in addrs[netifaces.AF_INET]:
+                        self.host_ips.add(addr_info['addr'])
+            except ValueError:
+                print(f"[!] Interface {interface} not found or has no IP address.")
 
     def should_notify(self, source_ip, event_type):
-        """
-        Determine if a notification should be sent based on cooldown and type.
-        """
         now = datetime.utcnow()
         key = (source_ip, event_type)
         
@@ -47,16 +41,15 @@ class Detector:
         self.last_notification[key] = now
         return True
 
-    def detect_scan(self, packet):
+    def detect_scan(self, packet, interface):
         if packet.haslayer(IP):
             source_ip = packet[IP].src
-            host_ip = self.get_ip_address(self.selected_interface)
 
-            # Ignore packets from or to the host machine
-            if source_ip == host_ip:
+            # Ignore traffic from our own IPs
+            if source_ip in self.host_ips:
                 return
 
-            # Ping Sweep detection (ICMP Echo Request)
+            # Ping Sweep detection
             if packet.haslayer(ICMP) and packet[ICMP].type == 8:
                 event = {
                     "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -65,13 +58,17 @@ class Detector:
                     "scan_type": "ICMP Echo Request",
                     "ports_scanned": "-",
                     "severity": "Medium",
+                    "interface": interface
                 }
                 self.alert_callback(**event)
 
                 if self.should_notify(source_ip, "Ping Sweep"):
-                    self.notify_callback(f"Ping Sweep detected from {source_ip}", "Medium")
+                    self.notify_callback(
+                        f"Ping Sweep detected from {source_ip} on interface {interface}", 
+                        "Medium"
+                    )
 
-            # Port Scan detection (TCP SYN scan)
+            # Port Scan detection
             elif packet.haslayer(TCP) and packet[TCP].flags == "S":
                 dest_port = packet[TCP].dport
                 event = {
@@ -81,21 +78,63 @@ class Detector:
                     "scan_type": "TCP SYN scan",
                     "ports_scanned": str(dest_port),
                     "severity": "High",
+                    "interface": interface
                 }
                 self.alert_callback(**event)
 
                 if self.should_notify(source_ip, "Port Scan"):
-                    self.notify_callback(f"Port Scan detected from {source_ip} on port {dest_port}", "High")
+                    self.notify_callback(
+                        f"Port Scan detected from {source_ip} on port {dest_port} (interface {interface})", 
+                        "High"
+                    )
 
-    def start_sniffer(self, interface=None):
-        self.is_running = True
+    def start_interface_sniffer(self, interface):
         try:
-            self.selected_interface = interface
-            sniff(iface=interface, prn=self.detect_scan, store=False, stop_filter=lambda x: not self.is_running)
-        except PermissionError:
-            print("[!] Permission denied. Run as root or use sudo.")
+            sniff(
+                iface=interface, 
+                prn=lambda packet: self.detect_scan(packet, interface), 
+                store=False, 
+                stop_filter=lambda x: not self.is_running
+            )
         except Exception as e:
-            print(f"[!] Error occurred: {e}")
+            print(f"[!] Error on interface {interface}: {e}")
+
+    def start_specific_interfaces(self, interfaces):
+        """
+        Start monitoring on specific interfaces.
+        
+        :param interfaces: List of interfaces to monitor
+        """
+        self.is_running = True
+        self.get_host_ips(interfaces)  # Retrieve IPs of the selected interfaces
+        for interface in interfaces:
+            thread = threading.Thread(
+                target=self.start_interface_sniffer, 
+                args=(interface,)
+            )
+            self.threads[interface] = thread
+            thread.start()
+
+    def start_all_interfaces(self):
+        """
+        Start monitoring on all available interfaces (excluding loopback).
+        """
+        self.is_running = True
+        interfaces = [
+            iface for iface in psutil.net_if_addrs().keys() 
+            if not iface.startswith('lo')  # Exclude loopback
+        ]
+        self.get_host_ips(interfaces)  # Retrieve IPs of all interfaces
+        for interface in interfaces:
+            thread = threading.Thread(
+                target=self.start_interface_sniffer, 
+                args=(interface,)
+            )
+            self.threads[interface] = thread
+            thread.start()
 
     def stop_sniffer(self):
         self.is_running = False
+        for thread in self.threads.values():
+            thread.join()
+        self.threads.clear()

@@ -4,8 +4,9 @@ if not os.environ.get('XDG_RUNTIME_DIR'):
 import sys
 import json
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, 
-    QPushButton, QTableWidget, QTableWidgetItem, QSystemTrayIcon, QMenu, QAction, QMessageBox
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
+    QTableWidget, QTableWidgetItem, QSystemTrayIcon, QMenu, QAction, QMessageBox, 
+    QGroupBox, QCheckBox, QScrollArea
 )
 from PyQt5.QtGui import QPixmap, QColor, QIcon
 from PyQt5.QtCore import Qt, pyqtSignal, QThread, QTimer
@@ -44,11 +45,9 @@ class NetworkScanDetectorGUI(QWidget):
         self.notification_bar.hide()
         self.main_layout.addWidget(self.notification_bar)
 
-
-
         # Set up the system tray icon
         self.tray_icon = QSystemTrayIcon(self)
-        self.tray_icon.setIcon(QIcon("src/Moiraguard_logo_bg.ico"))  # Set your desired icon
+        self.tray_icon.setIcon(QIcon("Moiraguard_logo_bg.ico"))  # Set your desired icon
         self.tray_icon.setVisible(True)
 
         # Set up tray menu
@@ -64,7 +63,7 @@ class NetworkScanDetectorGUI(QWidget):
         # Header with logo and title
         header_layout = QHBoxLayout()
         self.logo_label = QLabel()
-        self.set_logo("src/Moiraguard_logo_bg.png")
+        self.set_logo("Moiraguard_logo_bg.png")
         header_layout.addWidget(self.logo_label)
 
         self.title_label = QLabel("MoiraGuard - Network Scan Detector")
@@ -73,19 +72,48 @@ class NetworkScanDetectorGUI(QWidget):
         header_layout.addStretch()
         self.main_layout.addLayout(header_layout)
 
+
+
         # Host IP Label
         self.ip_label = QLabel("Host IP: Not Selected")
         self.ip_label.setStyleSheet("font-size: 14px; margin: 10px 0;")
-        self.main_layout.addWidget(self.ip_label)
+        #self.main_layout.addWidget(self.ip_label)
 
-        # Network interface selection
+        # Interface Selection Group Box
+        self.interface_group = QGroupBox("Select Interfaces to Monitor")
+        self.interface_group.setStyleSheet("QGroupBox { font-size: 16px; font-weight: bold; }")
+        self.interface_layout = QVBoxLayout()
+
+        # Add a "Select All" checkbox
+        self.select_all_checkbox = QCheckBox("Monitor All Interfaces")
+        self.select_all_checkbox.setStyleSheet("font-size: 14px;")
+        self.select_all_checkbox.stateChanged.connect(self.toggle_select_all)
+        self.interface_layout.addWidget(self.select_all_checkbox)
+
+        # Add checkboxes for each interface
         self.interfaces = self.get_available_interfaces()
-        self.interface_combobox = QComboBox(self)
-        self.interface_combobox.addItem("Select Interface")
-        self.interface_combobox.addItems(self.interfaces)
-        self.interface_combobox.setStyleSheet("background-color: #2E4053; color: white;")
-        self.interface_combobox.currentIndexChanged.connect(self.update_host_ip)
-        self.main_layout.addWidget(self.interface_combobox)
+        self.interface_checkboxes = {}
+        for interface in self.interfaces:
+            checkbox = QCheckBox(interface)
+            checkbox.setStyleSheet("font-size: 14px;")
+            checkbox.stateChanged.connect(self.update_selected_ips)  # Connect to update IPs
+            self.interface_checkboxes[interface] = checkbox
+            self.interface_layout.addWidget(checkbox)
+
+        # Add a scroll area for the interface selection
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_content = QWidget()
+        scroll_content.setLayout(self.interface_layout)
+        scroll_area.setWidget(scroll_content)
+        self.interface_group.setLayout(QVBoxLayout())
+        self.interface_group.layout().addWidget(scroll_area)
+        self.main_layout.addWidget(self.interface_group)
+
+        # Label to display selected IPs
+        self.selected_ips_label = QLabel("Selected IPs: None")
+        self.selected_ips_label.setStyleSheet("font-size: 14px; margin: 10px 0;")
+        self.main_layout.addWidget(self.selected_ips_label)
 
         # Buttons
         self.button_layout = QHBoxLayout()
@@ -115,13 +143,48 @@ class NetworkScanDetectorGUI(QWidget):
         # Alert Table
         self.alert_table = QTableWidget()
         self.alert_table.setRowCount(0)
-        self.alert_table.setColumnCount(6)
-        self.alert_table.setHorizontalHeaderLabels(["Timestamp", "Event Type", "Source IP", "Scan Type", "Ports Scanned", "Severity"])
+        self.alert_table.setColumnCount(7)  # Added a new column for Interface
+        self.alert_table.setHorizontalHeaderLabels(["Timestamp", "Event Type", "Source IP", "Scan Type", "Ports Scanned", "Severity", "Interface"])
         self.alert_table.horizontalHeader().setStretchLastSection(True)
         self.alert_table.setStyleSheet("background-color: #2E4053; color: white; gridline-color: #404E5C;")
         self.main_layout.addWidget(self.alert_table)
 
         self.setLayout(self.main_layout)
+
+    def update_selected_ips(self):
+        """
+        Update the label to display the IP addresses of the selected interfaces.
+        """
+        selected_interfaces = []
+        if self.select_all_checkbox.isChecked():
+            # Select all interfaces (excluding loopback)
+            selected_interfaces = [
+                iface for iface in self.interfaces 
+                if not iface.startswith('lo')
+            ]
+        else:
+            # Select only checked interfaces
+            for interface, checkbox in self.interface_checkboxes.items():
+                if checkbox.isChecked():
+                    selected_interfaces.append(interface)
+
+        # Get IP addresses of the selected interfaces
+        selected_ips = set()
+        for interface in selected_interfaces:
+            try:
+                addrs = netifaces.ifaddresses(interface)
+                if netifaces.AF_INET in addrs:
+                    for addr_info in addrs[netifaces.AF_INET]:
+                        selected_ips.add(addr_info['addr'])
+            except ValueError:
+                print(f"[!] Interface {interface} not found or has no IP address.")
+
+        # Update the label
+        if selected_ips:
+            self.selected_ips_label.setText(f"Selected IPs: {', '.join(selected_ips)}")
+        else:
+            self.selected_ips_label.setText("Selected IPs: None")
+
 
     def set_logo(self, logo_path):
         try:
@@ -130,6 +193,14 @@ class NetworkScanDetectorGUI(QWidget):
             self.logo_label.setPixmap(scaled_pixmap)
         except Exception as e:
             print(f"Failed to load logo: {e}")
+
+    def toggle_select_all(self, state):
+        """
+        Toggle the selection of all interfaces when the "Select All" checkbox is clicked.
+        """
+        for checkbox in self.interface_checkboxes.values():
+            checkbox.setChecked(state == Qt.Checked)
+        self.update_selected_ips()  # Update the IPs label
 
     def notify_threadsafe(self, message, severity):
         """
@@ -160,13 +231,31 @@ class NetworkScanDetectorGUI(QWidget):
         QTimer.singleShot(5000, self.notification_bar.hide)
 
     def start_monitoring(self):
-        selected_interface = self.interface_combobox.currentText()
-        if selected_interface != "Select Interface":
-            self.switch_to_monitoring_mode()
-            self.monitoring_thread = Thread(target=self.detector.start_sniffer, args=(selected_interface,))
-            self.monitoring_thread.start()
+        selected_interfaces = []
+        if self.select_all_checkbox.isChecked():
+            # Monitor all interfaces (excluding loopback)
+            selected_interfaces = [
+                iface for iface in self.interfaces 
+                if not iface.startswith('lo')
+            ]
         else:
-            print("Please select an interface.")
+            # Monitor selected interfaces
+            for interface, checkbox in self.interface_checkboxes.items():
+                if checkbox.isChecked():
+                    selected_interfaces.append(interface)
+
+        if not selected_interfaces:
+            QMessageBox.warning(self, "No Selection", "Please select at least one interface to monitor.")
+            return
+
+        self.switch_to_monitoring_mode()
+        if self.select_all_checkbox.isChecked():
+            # Start monitoring all interfaces
+            self.monitoring_thread = Thread(target=self.detector.start_all_interfaces)
+        else:
+            # Start monitoring selected interfaces
+            self.monitoring_thread = Thread(target=self.detector.start_specific_interfaces, args=(selected_interfaces,))
+        self.monitoring_thread.start()
 
     def stop_monitoring(self):
         self.detector.stop_sniffer()
@@ -174,12 +263,12 @@ class NetworkScanDetectorGUI(QWidget):
 
     def switch_to_monitoring_mode(self):
         self.start_button.hide()
-        self.interface_combobox.setDisabled(True)
+        self.interface_group.setDisabled(True)
         self.stop_button.show()
 
     def switch_to_idle_mode(self):
         self.start_button.show()
-        self.interface_combobox.setDisabled(False)
+        self.interface_group.setDisabled(False)
         self.stop_button.hide()
 
     def add_alert(self, event):
@@ -189,6 +278,7 @@ class NetworkScanDetectorGUI(QWidget):
         scan_type = event['scan_type']
         ports_scanned = event['ports_scanned']
         severity = event['severity']
+        interface = event.get('interface', 'Unknown')  # Get the interface from the event
 
         row_position = self.alert_table.rowCount()
         self.alert_table.insertRow(row_position)
@@ -200,6 +290,7 @@ class NetworkScanDetectorGUI(QWidget):
         severity_item = QTableWidgetItem(severity)
         severity_item.setForeground(QColor("red") if severity == "High" else QColor("yellow"))
         self.alert_table.setItem(row_position, 5, severity_item)
+        self.alert_table.setItem(row_position, 6, QTableWidgetItem(interface))  # Add interface to the table
         self.alert_table.scrollToBottom()
         self.alerts.append({
             "timestamp": timestamp,
@@ -207,26 +298,13 @@ class NetworkScanDetectorGUI(QWidget):
             "source_ip": source_ip,
             "scan_type": scan_type,
             "ports_scanned": ports_scanned,
-            "severity": severity
+            "severity": severity,
+            "interface": interface  # Include interface in the alerts list
         })
 
     def get_available_interfaces(self):
         interfaces = psutil.net_if_addrs()
         return list(interfaces.keys())
-
-    def update_host_ip(self):
-        selected_interface = self.interface_combobox.currentText()
-        if selected_interface != "Select Interface":
-            self.ip_label.setText(f"Host IP: {self.get_host_ip_by_interface(selected_interface)}")
-        else:
-            self.ip_label.setText("Host IP: Not Selected")
-
-    def get_host_ip_by_interface(self, interface):
-        try:
-            addrs = netifaces.ifaddresses(interface)
-            return addrs[netifaces.AF_INET][0]['addr']
-        except KeyError:
-            return "Unknown"
 
     def clear_alerts(self):
         self.alert_table.setRowCount(0)
