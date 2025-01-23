@@ -5,7 +5,7 @@ FROM python:3.9-slim
 WORKDIR /app
 
 # Create logs directory
-RUN mkdir -p /app/logs
+#RUN mkdir -p /app/logs
 
 # Install system dependencies for PyQt5 and GUI rendering
 RUN apt-get update && apt-get install -y \
