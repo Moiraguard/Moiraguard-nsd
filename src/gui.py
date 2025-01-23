@@ -239,8 +239,12 @@ class NetworkScanDetectorGUI(QWidget):
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         filename = f"alerts_{timestamp}.json"
-        file_path = os.path.join(os.getcwd(), filename)
+        current_dir = os.getcwd()
 
+        # Append 'logs' to the current directory to form the correct path
+        log_dir = current_dir.replace('src', 'logs')
+        file_path = os.path.join(log_dir, filename)
+        print(log_dir)
         try:
             with open(file_path, 'w') as json_file:
                 json.dump(self.alerts, json_file, indent=4)
