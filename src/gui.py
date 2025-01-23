@@ -6,7 +6,7 @@ import json
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
     QTableWidget, QTableWidgetItem, QSystemTrayIcon, QMenu, QAction, QMessageBox, 
-    QGroupBox, QCheckBox, QScrollArea
+    QGroupBox, QScrollArea, QCheckBox
 )
 from PyQt5.QtGui import QPixmap, QColor, QIcon
 from PyQt5.QtCore import Qt, pyqtSignal, QThread, QTimer
@@ -72,8 +72,6 @@ class NetworkScanDetectorGUI(QWidget):
         header_layout.addStretch()
         self.main_layout.addLayout(header_layout)
 
-
-
         # Host IP Label
         self.ip_label = QLabel("Host IP: Not Selected")
         self.ip_label.setStyleSheet("font-size: 14px; margin: 10px 0;")
@@ -84,11 +82,17 @@ class NetworkScanDetectorGUI(QWidget):
         self.interface_group.setStyleSheet("QGroupBox { font-size: 16px; font-weight: bold; }")
         self.interface_layout = QVBoxLayout()
 
-        # Add a "Select All" checkbox
-        self.select_all_checkbox = QCheckBox("Monitor All Interfaces")
+        # Add a "Select All Interfaces" checkbox
+        self.select_all_checkbox = QCheckBox("Select All Interfaces")
         self.select_all_checkbox.setStyleSheet("font-size: 14px;")
         self.select_all_checkbox.stateChanged.connect(self.toggle_select_all)
         self.interface_layout.addWidget(self.select_all_checkbox)
+
+        # Add a scrollable area for the interface selection
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_content = QWidget()
+        self.scroll_layout = QVBoxLayout(self.scroll_content)
 
         # Add checkboxes for each interface
         self.interfaces = self.get_available_interfaces()
@@ -96,18 +100,13 @@ class NetworkScanDetectorGUI(QWidget):
         for interface in self.interfaces:
             checkbox = QCheckBox(interface)
             checkbox.setStyleSheet("font-size: 14px;")
-            checkbox.stateChanged.connect(self.update_selected_ips)  # Connect to update IPs
+            checkbox.stateChanged.connect(self.update_selected_ips)
             self.interface_checkboxes[interface] = checkbox
-            self.interface_layout.addWidget(checkbox)
+            self.scroll_layout.addWidget(checkbox)
 
-        # Add a scroll area for the interface selection
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_content = QWidget()
-        scroll_content.setLayout(self.interface_layout)
-        scroll_area.setWidget(scroll_content)
-        self.interface_group.setLayout(QVBoxLayout())
-        self.interface_group.layout().addWidget(scroll_area)
+        self.scroll_area.setWidget(self.scroll_content)
+        self.interface_layout.addWidget(self.scroll_area)
+        self.interface_group.setLayout(self.interface_layout)
         self.main_layout.addWidget(self.interface_group)
 
         # Label to display selected IPs
@@ -151,22 +150,22 @@ class NetworkScanDetectorGUI(QWidget):
 
         self.setLayout(self.main_layout)
 
+    def toggle_select_all(self, state):
+        """
+        Toggle the selection of all interfaces when the "Select All" checkbox is clicked.
+        """
+        for checkbox in self.interface_checkboxes.values():
+            checkbox.setChecked(state == Qt.Checked)
+        self.update_selected_ips()
+
     def update_selected_ips(self):
         """
         Update the label to display the IP addresses of the selected interfaces.
         """
         selected_interfaces = []
-        if self.select_all_checkbox.isChecked():
-            # Select all interfaces (excluding loopback)
-            selected_interfaces = [
-                iface for iface in self.interfaces 
-                if not iface.startswith('lo')
-            ]
-        else:
-            # Select only checked interfaces
-            for interface, checkbox in self.interface_checkboxes.items():
-                if checkbox.isChecked():
-                    selected_interfaces.append(interface)
+        for interface, checkbox in self.interface_checkboxes.items():
+            if checkbox.isChecked():
+                selected_interfaces.append(interface)
 
         # Get IP addresses of the selected interfaces
         selected_ips = set()
@@ -179,12 +178,11 @@ class NetworkScanDetectorGUI(QWidget):
             except ValueError:
                 print(f"[!] Interface {interface} not found or has no IP address.")
 
-        # Update the label
+        # Update the selected IPs label
         if selected_ips:
             self.selected_ips_label.setText(f"Selected IPs: {', '.join(selected_ips)}")
         else:
             self.selected_ips_label.setText("Selected IPs: None")
-
 
     def set_logo(self, logo_path):
         try:
@@ -193,14 +191,6 @@ class NetworkScanDetectorGUI(QWidget):
             self.logo_label.setPixmap(scaled_pixmap)
         except Exception as e:
             print(f"Failed to load logo: {e}")
-
-    def toggle_select_all(self, state):
-        """
-        Toggle the selection of all interfaces when the "Select All" checkbox is clicked.
-        """
-        for checkbox in self.interface_checkboxes.values():
-            checkbox.setChecked(state == Qt.Checked)
-        self.update_selected_ips()  # Update the IPs label
 
     def notify_threadsafe(self, message, severity):
         """
@@ -231,43 +221,97 @@ class NetworkScanDetectorGUI(QWidget):
         QTimer.singleShot(5000, self.notification_bar.hide)
 
     def start_monitoring(self):
+        """
+        Start monitoring on selected interfaces.
+        """
         selected_interfaces = []
-        if self.select_all_checkbox.isChecked():
-            # Monitor all interfaces (excluding loopback)
-            selected_interfaces = [
-                iface for iface in self.interfaces 
-                if not iface.startswith('lo')
-            ]
-        else:
-            # Monitor selected interfaces
-            for interface, checkbox in self.interface_checkboxes.items():
-                if checkbox.isChecked():
-                    selected_interfaces.append(interface)
+        for interface, checkbox in self.interface_checkboxes.items():
+            if checkbox.isChecked():
+                selected_interfaces.append(interface)
 
         if not selected_interfaces:
             QMessageBox.warning(self, "No Selection", "Please select at least one interface to monitor.")
             return
 
+        # Disable buttons and show loading
         self.switch_to_monitoring_mode()
-        if self.select_all_checkbox.isChecked():
-            # Start monitoring all interfaces
-            self.monitoring_thread = Thread(target=self.detector.start_all_interfaces)
-        else:
-            # Start monitoring selected interfaces
-            self.monitoring_thread = Thread(target=self.detector.start_specific_interfaces, args=(selected_interfaces,))
+        self.start_button.setEnabled(False)
+        self.stop_button.setEnabled(False)
+        self.notification_bar.setText("Starting monitoring...")
+        self.notification_bar.show()
+
+        # Get IP addresses of the selected interfaces
+        selected_ips = set()
+        for interface in selected_interfaces:
+            try:
+                addrs = netifaces.ifaddresses(interface)
+                if netifaces.AF_INET in addrs:
+                    for addr_info in addrs[netifaces.AF_INET]:
+                        selected_ips.add(addr_info['addr'])
+            except ValueError:
+                print(f"[!] Interface {interface} not found or has no IP address.")
+
+        # Update the selected IPs label
+        self.selected_ips_label.setText(f"Selected IPs: {', '.join(selected_ips)}")
+
+        # Pass the selected IPs to the detector
+        self.detector.host_ips = selected_ips
+
+        # Start monitoring in a separate thread
+        self.monitoring_thread = Thread(target=self.detector.start_specific_interfaces, args=(selected_interfaces,))
         self.monitoring_thread.start()
 
+        # Re-enable buttons after a short delay (simulating loading)
+        QTimer.singleShot(1000, self.enable_buttons_after_start)
+    
+    def enable_buttons_after_start(self):
+        """
+        Re-enable buttons after starting monitoring.
+        """
+        self.start_button.setEnabled(False)  # Keep start button disabled while monitoring
+        self.stop_button.setEnabled(True)    # Enable stop button
+        self.notification_bar.hide()
+   
     def stop_monitoring(self):
-        self.detector.stop_sniffer()
-        self.switch_to_idle_mode()
+        """
+        Stop monitoring and handle any unresponsive threads.
+        """
+        # Disable buttons and show loading
+        self.stop_button.setEnabled(False)
+        self.notification_bar.setText("Stopping monitoring...")
+        self.notification_bar.show()
+
+        try:
+            self.detector.stop_sniffer()
+        except Exception as e:
+            print(f"[!] Error stopping sniffer: {e}")
+            # Fallback: Forcefully terminate all threads
+            for thread in self.monitoring_threads:
+                if thread.is_alive():
+                    print(f"[!] Forcefully terminating thread: {thread.name}")
+                    thread.join(timeout=1)  # Give it a final chance to stop
+                    if thread.is_alive():
+                        print(f"[!] Thread {thread.name} is still alive. Killing it.")
+                        thread._stop()  # Forcefully stop the thread (not recommended but necessary as a fallback)
+        finally:
+            # Re-enable buttons and hide loading
+            self.switch_to_idle_mode()
+            self.notification_bar.hide()
 
     def switch_to_monitoring_mode(self):
+        """
+        Switch to monitoring mode (disable interface selection and enable stop button).
+        """
         self.start_button.hide()
         self.interface_group.setDisabled(True)
         self.stop_button.show()
 
     def switch_to_idle_mode(self):
+        """
+        Switch to idle mode (enable interface selection and enable start button).
+        """
         self.start_button.show()
+        self.start_button.setEnabled(True)
         self.interface_group.setDisabled(False)
         self.stop_button.hide()
 

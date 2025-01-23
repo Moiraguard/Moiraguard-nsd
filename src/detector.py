@@ -4,6 +4,7 @@ import socket
 import psutil
 import threading
 import netifaces
+import time
 
 class Detector:
     def __init__(self, alert_callback, notify_callback):
@@ -102,8 +103,6 @@ class Detector:
     def start_specific_interfaces(self, interfaces):
         """
         Start monitoring on specific interfaces.
-        
-        :param interfaces: List of interfaces to monitor
         """
         self.is_running = True
         self.get_host_ips(interfaces)  # Retrieve IPs of the selected interfaces
@@ -134,7 +133,16 @@ class Detector:
             thread.start()
 
     def stop_sniffer(self):
+        """
+        Stop monitoring on all interfaces.
+        """
         self.is_running = False
-        for thread in self.threads.values():
-            thread.join()
+        for interface, thread in self.threads.items():
+            try:
+                # Wait for the thread to finish gracefully
+                thread.join(timeout=5)  # 5-second timeout
+                if thread.is_alive():
+                    print(f"[!] Thread for interface {interface} did not stop gracefully. Terminating...")
+            except Exception as e:
+                print(f"[!] Error stopping thread for interface {interface}: {e}")
         self.threads.clear()
