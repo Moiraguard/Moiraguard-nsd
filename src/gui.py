@@ -238,7 +238,7 @@ class NetworkScanDetectorGUI(QWidget):
             return
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        filename = f"mouiraguard-nsd_alerts_{timestamp}.json"
+        filename = f"moiraraguard-nsd_alerts_{timestamp}.json"
         current_dir = os.getcwd()
 
         print(current_dir)
