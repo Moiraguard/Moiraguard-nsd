@@ -241,9 +241,10 @@ class NetworkScanDetectorGUI(QWidget):
         filename = f"mouiraguard-nsd_alerts_{timestamp}.json"
         current_dir = os.getcwd()
 
-        # Append 'logs' to the current directory to form the correct path
-        log_dir = current_dir.replace('src', 'logs')
+        print(current_dir)
+        log_dir = current_dir +"/logs/"
         file_path = os.path.join(log_dir, filename)
+        print(os.path.join(log_dir, filename))
         print(log_dir)
         try:
             with open(file_path, 'w') as json_file:

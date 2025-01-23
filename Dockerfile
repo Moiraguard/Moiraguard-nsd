@@ -29,7 +29,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the src directory into the container
-COPY src ./src
+COPY . .
 
 # Set the command to run the application
 CMD ["python", "src/gui.py"]

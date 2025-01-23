@@ -1,0 +1,26 @@
+[
+    {
+        "timestamp": "2025-01-23T11:59:16.174784Z",
+        "event_type": "Ping Sweep",
+        "source_ip": "192.168.11.136",
+        "scan_type": "ICMP Echo Request",
+        "ports_scanned": "-",
+        "severity": "Medium"
+    },
+    {
+        "timestamp": "2025-01-23T11:59:17.326642Z",
+        "event_type": "Ping Sweep",
+        "source_ip": "192.168.11.136",
+        "scan_type": "ICMP Echo Request",
+        "ports_scanned": "-",
+        "severity": "Medium"
+    },
+    {
+        "timestamp": "2025-01-23T11:59:18.204264Z",
+        "event_type": "Ping Sweep",
+        "source_ip": "192.168.11.136",
+        "scan_type": "ICMP Echo Request",
+        "ports_scanned": "-",
+        "severity": "Medium"
+    }
+]
