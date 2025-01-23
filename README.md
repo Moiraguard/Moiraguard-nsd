@@ -12,6 +12,23 @@
 Follow these steps to run MoiraGuard from Docker Hub:
 
 ---
+## 0. TL;DR 
+
+You can change where the alert Logs will be saved by changing "/var/log" from the bellow Command .
+
+Usage : Run MOIRAGUARD-NSD Tool, Chose an interface to monitor, you can close the interface and it will be running in the background :) 
+
+```bash
+xhost +local:docker && \
+sudo docker run -it --rm \
+  -e DISPLAY=$DISPLAY \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  -v /var/log:/app/logs \
+  --network=host \
+  --cap-add=NET_RAW --cap-add=NET_ADMIN \
+  moiraguard/moiraguard-nsd:v1
+```
+---
 
 ## 1. Prerequisites
 
