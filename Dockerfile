@@ -4,8 +4,10 @@ FROM python:3.9-slim
 # Set the working directory
 WORKDIR /app
 
-# Install system dependencies for PyQt5 and GUI rendering
+# Create logs directory
+RUN mkdir -p /app/logs
 
+# Install system dependencies for PyQt5 and GUI rendering
 RUN apt-get update && apt-get install -y \
     libx11-6 \
     libxext-dev \
@@ -19,7 +21,6 @@ RUN apt-get update && apt-get install -y \
     iputils-ping \
     libgl1-mesa-glx \ 
     && rm -rf /var/lib/apt/lists/*
-
 
 # Copy the requirements file into the container
 COPY requirements.txt .
