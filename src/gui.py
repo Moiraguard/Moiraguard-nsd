@@ -47,7 +47,7 @@ class NetworkScanDetectorGUI(QWidget):
 
         # Set up the system tray icon
         self.tray_icon = QSystemTrayIcon(self)
-        self.tray_icon.setIcon(QIcon("Moiraguard_logo_bg.ico"))  # Set your desired icon
+        self.tray_icon.setIcon(QIcon("src/Moiraguard_logo_bg.ico"))  # Set your desired icon
         self.tray_icon.setVisible(True)
 
         # Set up tray menu
@@ -63,7 +63,7 @@ class NetworkScanDetectorGUI(QWidget):
         # Header with logo and title
         header_layout = QHBoxLayout()
         self.logo_label = QLabel()
-        self.set_logo("Moiraguard_logo_bg.png")
+        self.set_logo("src/Moiraguard_logo_bg.png")
         header_layout.addWidget(self.logo_label)
 
         self.title_label = QLabel("MoiraGuard - Network Scan Detector")
